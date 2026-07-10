@@ -1,0 +1,56 @@
+[project]
+name = "DeepResearchSystem"
+version = "0.1.0"
+description = "DeepResearchSystem"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+
+dependencies = [
+    "langgraph==1.1.6",
+    "langchain>=1.2.15",
+    "langchain-openai",
+    "langgraph-sdk>=0.3.13",
+    "langgraph-cli",
+    "langgraph-api",
+
+    "fastapi==0.115.9",
+    "dashscope",
+
+    "python-dotenv>=1.0.1"
+]
+
+# ===================== UV 核心配置（修复 Intel Mac + 镜像兼容问题/目前主要是 torch）=====================
+# 强制指定当前环境：macOS 系统 + Intel(x86_64) 芯片，让 uv 只安装兼容的包
+[tool.uv]
+required-environments = [
+    "sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
+# 允许跨多个镜像源查找包
+index-strategy = "unsafe-best-match"
+# 新增：延长下载超时时间（解决网络报错）
+http-timeout = 120  # 秒
+# 新增：失败自动重试
+retry = true
+retry-max-attempts = 5
+
+# PyTorch 官方专用源
+[[tool.uv.index]]
+url = "https://download.pytorch.org/whl/cpu"
+name = "torch"
+
+# 官方 PyPI 源（补充阿里云缺失的包，如新版 langchain-tavily）
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+name = "pypi"
+
+# ✅ 核心：只做工作区，不做可安装包（关键！）
+#[tool.uv]
+# 禁用 editable 安装，不触发 setuptools 构建
+#editable = false
+
+
+# ✅ 启用 Workspace，声明所有子项目目录（members）
+#[tool.uv.workspace]
+#members = [
+#
+#]
