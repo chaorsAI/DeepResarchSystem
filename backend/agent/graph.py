@@ -3,16 +3,17 @@
 
 from constant import *
 from state import *
+from configuration import *
 
 from langgraph.graph import StateGraph
-
+from langchain_core.runnables import RunnableConfig
 
 ######---Agent 图定义 ---######
 # ---边事件定义
 def generate_plan() :
     return None
 
-def generate_search(state : OverallState, config : CRITIQUE_NODE) -> QueryGenerationState :
+def generate_search(state : OverallState, config : RunnableConfig) -> QueryGenerationState :
     """
     基于用户的自然语言请求，拆解出搜索关键字
     使用LLM为用户的问题创建优化的网络搜索查询，用于网络研究。
@@ -21,6 +22,8 @@ def generate_search(state : OverallState, config : CRITIQUE_NODE) -> QueryGenera
     :param config:
     :return:
     """
+    configuration = Configuration.runnable_config(config)
+    
 
 def web_search() :
     return None

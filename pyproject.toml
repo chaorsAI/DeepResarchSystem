@@ -16,6 +16,7 @@ dependencies = [
 
     "fastapi==0.115.9",
     "dashscope",
+    "loguru",
 
     "python-dotenv>=1.0.1"
 ]

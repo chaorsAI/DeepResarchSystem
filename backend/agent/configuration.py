@@ -1,5 +1,9 @@
 # configuration.py    Agent 相关配置项，涉及大模型配置的
 
+# 顶部必须明确定义导出接口
+__all__ = ["Configuration"]
+
+
 import os
 import json
 from pydantic import BaseModel, Field
@@ -79,25 +83,25 @@ class Configuration(BaseModel) :
         description="要执行的最大research循环次数.",
     )
 
-@classmethod
-# RunnableConfig到Pydantic配置模型的适配层
-def runable_config(cls, config : Optional[RunnableConfig] = None) -> "Configuration":
-    """从RunnableConfig创建配置实例"""
-    configurable = (
-        config["configurable"] if config and "configurable" in config else {}
-    )
+    @classmethod
+    # RunnableConfig到Pydantic配置模型的适配层
+    def runnable_config(cls, config : Optional[RunnableConfig] = None) -> "Configuration" :
+        """从RunnableConfig创建配置实例"""
+        configurable = (
+            config["configurable"] if config and "configurable" in config else {}
+        )
 
-    raw_values : dict[str, Any] = {}
-    for name in cls.model_fields.keys() :
-        # 跳过 available_models，它应该从环境变量直接加载
-        if name == "available_models":
-            continue
-        env_value = os.environ.get(name.upper())
-        config_value = configurable.get(name)
-        raw_values[name] = env_value if env_value is not None else config_value
+        raw_values : dict[str, Any] = {}
+        for name in cls.model_fields.keys() :
+            # 跳过 available_models，它应该从环境变量直接加载
+            if name == "available_models":
+                continue
+            env_value = os.environ.get(name.upper())
+            config_value = configurable.get(name)
+            raw_values[name] = env_value if env_value is not None else config_value
 
-    values = {k: v for k, v in raw_values.items() if v is not None}
+        values = {k: v for k, v in raw_values.items() if v is not None}
 
-    return cls(**values)
+        return cls(**values)
 
 
