@@ -1,9 +1,4 @@
-# prompt.py    提示词
-
-from datetime import datetime
-
-def get_current_date():
-    return datetime.now().strftime("%B %d, %Y")
+# prompts.py    提示词
 
 query_writer_instructions = """# 任务说明
 你的任务是根据当前的研究主题决定多个用于网络搜索的标题，这些标题会被用于从网页搜集信息，并整合成一份专业的研究报告
