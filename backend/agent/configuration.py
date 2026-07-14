@@ -5,7 +5,7 @@ __all__ = ["Configuration"]
 
 
 import os
-import json
+import jsonUtils
 from pydantic import BaseModel, Field
 from typing import Any, Optional, List
 
