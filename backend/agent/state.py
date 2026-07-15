@@ -25,7 +25,7 @@ class OverallState(TypedDict):
     research_loop_count: int
     # 推理模型
     reasoning_model: str
-    # 人类参与决策后的相关字段
+    # 人类参与后的相关字段
     # 计划内容
     plan: str
     # 计划状态：1待确认、2已确认、3重新生成基础
