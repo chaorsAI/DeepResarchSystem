@@ -22,19 +22,19 @@ from agent import (
 )
 from jsonUtils import *
 
+
 from loguru import logger
 import json
+from IPython.display import Image, display
+
 
 from langgraph.graph import StateGraph
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Send
-
+from langchain_core.messages import AIMessage
 
 ######---Agent 图定义 ---######
-# ---边事件定义
-def generate_plan() :
-    return None
-
+# ---节点事件定义
 def generate_search(state : OverallState, config : RunnableConfig) -> QueryGenerationState :
     """
     基于用户 的自然语言请求，拆解出搜索关键字
@@ -65,23 +65,6 @@ def generate_search(state : OverallState, config : RunnableConfig) -> QueryGener
     logger.info(f"待搜索内容生成结果: {result}")
     return {"search_query": result.query}
 
-def send_to_web_search(state: QueryGenerationState):
-    """
-    为每个搜索查询生成n个网络研究节点，实现并行搜索。
-
-    Args:
-        state: 包含搜索查询的查询生成状态
-
-    Returns:
-        发送到web_search节点的消息列表
-    """
-    logger.info(f"准备发送请求给网络搜索节点......")
-    return [
-        Send(WEB_SEARCH_NODE, {"search_query": search_query, "id": int(idx)})
-        for idx, search_query in enumerate(state["search_query"])
-    ]
-
-
 def web_search(state: WebSearchState, config: RunnableConfig) -> OverallState:
     """
     网络搜索节点
@@ -94,7 +77,7 @@ def web_search(state: WebSearchState, config: RunnableConfig) -> OverallState:
     """
     logger.info(f"开始网络搜索......")
     # 配置
-    configurable = Configuration.from_runnable_config(config)
+    configurable = Configuration.runnable_config(config)
     web_searcher = WebSearchAgent()
 
     # 执行搜索
@@ -110,7 +93,9 @@ def web_search(state: WebSearchState, config: RunnableConfig) -> OverallState:
             "web_search_result": [f"未找到关于 '{state['search_query']}' 的搜索结果"],
         }
 
-    # 长URL到短URL的映射
+    # 长URL到短URL的映射：节省Token上下文长度
+    # https://search.com/id/0 - 3 代替
+    # 再最终报告中再替换回原始URL，保障引用准确性
     long2short_url_mappings = resolve_urls(response, state["id"])
     sources_gathered = [
         {"short_url": long2short_url_mappings[item["url"]], "value": item["url"], "label": item["title"]} for item in
@@ -134,16 +119,135 @@ def web_search(state: WebSearchState, config: RunnableConfig) -> OverallState:
         "web_search_result": [modified_text],
     }
 
-def critique() :
-    return None
-def final_answer() :
-    return None
+def critique(state: OverallState, config: RunnableConfig) -> ReflectionState:
+    """
+    识别知识差距并生成潜在后续查询的节点
+
+    分析当前摘要以识别需要进一步研究的领域，并生成潜在的后续查询。
+    使用结构化输出来提取JSON格式的后续查询。
+
+    :param state: 当前图状态
+    :param config: 运行配置
+    :return: 包含状态更新的字典，包括search_query键，包含生成的后续查询
+    """
+
+    logger.info(f"反思分析识别知识差距并生成潜在后续查询的节点工作......")
+    configurable = Configuration.from_runnable_config(config)
+    # 增加研究循环计数并获取推理模型
+    state["research_loop_count"] = state.get("research_loop_count", 0) + 1
+    reasoning_model = state.get("reasoning_model", configurable.reflection_model)
+    logger.info(f"critique反思节点模型：{reasoning_model}")
+
+    # 格式化输出
+    agent = JsonAgent(model_id=reasoning_model, keys=Reflection)
+    agent.set_step_prompt(reflection_instructions)
+    result = agent.step(
+        ccurrent_date=get_current_date(),
+        number_queries=state["initial_search_query_count"],
+        research_topic=get_research_topic(state["messages"]),
+        summaries="\n\n---\n\n".join(state["web_search_result"]),
+    )
+
+    logger.info(f"反思分析：{result}")
+    return {
+        "is_sufficient": result.is_sufficient,
+        "knowledge_gap": result.knowledge_gap,
+        "follow_up_queries": result.follow_up_queries,
+        "research_loop_count": state["research_loop_count"],
+        "number_of_ran_queries": len(state["search_query"]),
+        "max_research_loops": state.get("max_research_loops", configurable.max_research_loops),
+    }
+
+def final_answer(state: OverallState, config: RunnableConfig):
+    """
+    创建结构良好的研究报告，包含适当的引用。
+    :param state: 当前状态
+    :param config: 运行配置
+    :return:包含状态更新的字典，包括running_summary键，包含格式化的最终摘要和源
+    """
+
+    logger.info("最终答案准备生成........")
+    configurable = Configuration.from_runnable_config(config)
+    reasoning_model = state.get("reasoning_model") or configurable.answer_model
+    logger.info(f"final_answer最终答案节点模型：{reasoning_model}")
+
+    # 格式化提示
+    agent = Agent(model_id=reasoning_model)
+    agent.set_step_prompt(answer_instructions)
+    content = agent.step(
+        current_date=get_current_date(),
+        research_topic=get_research_topic(state["messages"]),
+        summaries="\n---\n\n".join(state["web_search_result"]),
+    )
+
+    # 用原始URL替换短URL，并将所有使用的URL添加到sources_gathered
+    unique_sources = []
+    for source in state["sources_gathered"]:
+        if source["short_url"] in content:
+            content = content.replace(
+                source["short_url"], source["value"]
+            )
+            unique_sources.append(source)
+
+    logger.info(f"最终确定答案：{content}")
+    return {
+        "messages": [AIMessage(content=content)],
+        "sources_gathered": unique_sources,
+    }
 
 # ---条件边事件
-def send_to_web_search() :
-    return None
-def route_evaluate() :
-    return None
+def send_to_web_search(state: QueryGenerationState):
+    """
+    为每个搜索查询生成n个网络研究节点，实现并行搜索。
+
+    Args:
+        state: 包含搜索查询的查询生成状态
+
+    Returns:
+        发送到web_search节点的消息列表
+    """
+    logger.info(f"准备发送请求给网络搜索节点......")
+    return [
+        Send(WEB_SEARCH_NODE, {"search_query": search_query, "id": int(idx)})
+        for idx, search_query in enumerate(state["search_query"])
+    ]
+
+def route_evaluate(state: OverallState, config: RunnableConfig) -> OverallState:
+    """
+    确定 critique 后下一步的路由函数
+
+    通过决定是否继续收集信息状态"is_sufficient"或基于配置的最大research循环次数来最终确定摘要，
+    从而控制research循环。
+    :param state: 当前图状态
+    :param config: 运行配置
+    :return: 全量状态，指示下一个要访问的节点（"web_research"或"finalize_summary"）
+    """
+
+    logger.info("准备评估当前研究......")
+    configurable = Configuration.from_runnable_config(config)
+    max_research_loops = (
+        state.get("max_research_loops")
+        if state.get("max_research_loops") is not None
+        else configurable.max_research_loops
+    )
+
+    logger.info(state)
+    logger.info(f"最大研究循环数: {max_research_loops}")
+    logger.info(f"当前已研究次数: {state['research_loop_count']}")
+    if state["is_sufficient"] or state["research_loop_count"] >= max_research_loops:
+        return FINAL_ANSWER_NODE
+    else:
+        return [
+            Send(
+                WEB_SEARCH_NODE,
+                {
+                    "search_query": follow_up_query,
+                    "id": state["number_of_ran_queries"] + int(idx),
+                },
+            )
+            for idx, follow_up_query in enumerate(state["follow_up_queries"])
+        ]
+
 
 # ---图构建
 builder = StateGraph(OverallState, config_schema=None)
@@ -155,12 +259,15 @@ builder.add_node(CRITIQUE_NODE, critique)
 builder.add_node(FINAL_ANSWER_NODE, final_answer)
 
 # 边定义
-builder.add_edge(START, GENERATE_PLAN_NODE)
+builder.add_edge("start", GENERATE_SEARCH_NODE)
+# 子话题并行搜索
 builder.add_conditional_edges(GENERATE_SEARCH_NODE, send_to_web_search,path_map=[WEB_SEARCH_NODE])
 builder.add_edge(WEB_SEARCH_NODE, CRITIQUE_NODE)
 builder.add_conditional_edges(CRITIQUE_NODE, route_evaluate, path_map=[WEB_SEARCH_NODE, FINAL_ANSWER_NODE])
 # 最终确定答案
-builder.add_edge(FINAL_ANSWER_NODE, END)
+builder.add_edge(FINAL_ANSWER_NODE, "end")
 
 # 图编译
-builder.compile(name=DEEP_RESEARCH_AGENT)
+graph = builder.compile(name=DEEP_RESEARCH_AGENT)
+
+display(Image(graph.get_graph().draw_mermaid_png(output_file_path='./graph_images/基础图.png')))

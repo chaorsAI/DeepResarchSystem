@@ -13,13 +13,12 @@ dependencies = [
     "langgraph-cli",
     "langgraph-api",
     "openai",
-
     "fastapi==0.115.9",
     "dashscope",
     "loguru",
     "jsonpath_ng",
-
-    "python-dotenv>=1.0.1"
+    "python-dotenv>=1.0.1",
+    "ipython>=9.15.0",
 ]
 
 # 可选组件
