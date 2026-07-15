@@ -2,15 +2,15 @@
 from typer.cli import state
 
 from agent import JsonAgent
-from constant import *
-from state import *
-from configuration import *
-from tools_and_schemas import (
+from agent.constant import *
+from agent.state import *
+from agent.configuration import *
+from agent.tools_and_schemas import (
     SearchQueryList,
     Reflection,
     PlanReflection
 )
-from prompts import (
+from agent.prompts import (
     query_writer_instructions,
     web_searcher_instructions,
     reflection_instructions,
@@ -18,18 +18,18 @@ from prompts import (
     plan_instructions,
     plan_reflection_instructions
 )
-from utils import (
+from agent.utils import (
     get_current_date,
     get_research_topic,
     resolve_urls,
     get_last_user_response
 )
-from agent import (
+from agent.agent import (
     Agent,
     JsonAgent,
     WebSearchAgent
 )
-from jsonUtils import *
+from agent.jsonUtils import *
 
 
 from loguru import logger
@@ -42,7 +42,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Send
 from langchain_core.messages import AIMessage
 from langgraph.types import interrupt
-
+from langgraph.graph import StateGraph, START, END
 
 ######---Agent 图定义 ---######
 # ---节点事件定义
@@ -341,10 +341,10 @@ def route_evaluate(state: OverallState, config: RunnableConfig) -> OverallState:
 
 
 # ---图构建
-builder = StateGraph(OverallState, config_schema=None)
+builder = StateGraph(OverallState, context_schema=None)
 
 # 图节点
-builder.add_node(GENERATE_SEARCH_NODE, generate_plan)
+builder.add_node(GENERATE_PLAN_NODE, generate_plan)
 builder.add_node(GENERATE_SEARCH_NODE, generate_search)
 builder.add_node(WEB_SEARCH_NODE, web_search)
 builder.add_node(CRITIQUE_NODE, critique)
@@ -379,7 +379,7 @@ builder.add_node(SEARCH_REPLAN, lambda state, config: {"plan_status": "unconfirm
 # builder.add_node(SEARCH_REPLAN, search_replan)
 
 # 边定义
-builder.add_edge("start", GENERATE_PLAN_NODE)
+builder.add_edge(START, GENERATE_PLAN_NODE)
 # 条件边：人类干预是否认可研究计划
 builder.add_conditional_edges(GENERATE_PLAN_NODE, evaluate_plan, [GENERATE_SEARCH_NODE, SEARCH_REPLAN, AWAITING_PLAN_CONFIRMATION])
 # 重新生成计划
@@ -389,7 +389,7 @@ builder.add_conditional_edges(GENERATE_SEARCH_NODE, send_to_web_search,path_map=
 builder.add_edge(WEB_SEARCH_NODE, CRITIQUE_NODE)
 builder.add_conditional_edges(CRITIQUE_NODE, route_evaluate, path_map=[WEB_SEARCH_NODE, FINAL_ANSWER_NODE])
 # 最终确定答案
-builder.add_edge(FINAL_ANSWER_NODE, "end")
+builder.add_edge(FINAL_ANSWER_NODE, END)
 
 # 图编译
 graph = builder.compile(name=DEEP_RESEARCH_AGENT)

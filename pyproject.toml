@@ -19,6 +19,7 @@ dependencies = [
     "jsonpath_ng",
     "python-dotenv>=1.0.1",
     "ipython>=9.15.0",
+    "llm>=0.31.1",
 ]
 
 # 可选组件

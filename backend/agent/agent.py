@@ -1,21 +1,21 @@
 # agent.py    Agent 核心类
 import json
-from jsonpath_ng import parse as jsonpath_parse, JSONPathError
+from jsonpath_ng import parse as jsonpath_parse
+from jsonpath_ng.exceptions import JSONPathError
 from jsonpath_ng.ext import parser as jsonpath_parser
 
 from openai.lib.azure import API_KEY_SENTINEL
 
-from configuration import get_default_model_id
-from llm import OpenAICompatibleLLM
-from constant import *
-from jsonUtils import *
+from agent.configuration import get_default_model_id
+from agent.llm import OpenAICompatibleLLM
+from agent.constant import *
+from agent.jsonUtils import *
 
 import os
 import copy
 import traceback
 import time
 import threading
-import jsonUtils
 from dotenv import load_dotenv
 
 from loguru import logger
@@ -66,7 +66,7 @@ class RateLimiter :
 
 class Agent :
     step_prompt = """{prompt}"""
-    def __init__(self, model_id=get_default_model_id()) :
+    def __init__(self, model_id="qwen2.5-72b-instruct") :
         self.llm = OpenAICompatibleLLM(model_id=model_id)
 
     def __call(self, prompt) :
@@ -120,7 +120,7 @@ class JsonAgent(Agent):
         # self.keys：Pydantic 模型类工厂函数，相当于使用result进行构造；Pydantic自动做字段验证和类型转换
         return self.keys(**result)
 
-class MCPAgent :
+class MCPAgent(Agent) :
     """和 MCP 通讯"""
     def step(self, **kwargs):
         try:
@@ -172,7 +172,7 @@ class WebSearchAgent(MCPAgent):
     """WebSearch MCP"""
     def step(self, prompt, **kwargs):
         try:
-            step_prompt = self.step_prompt.prompt_format(prompt=prompt)
+            step_prompt = self.step_prompt.format(prompt=prompt)
         except Exception as e:
             step_prompt = self.step_prompt
 
@@ -203,10 +203,10 @@ class WebSearchAgent(MCPAgent):
 
                 # 我们本身在请求时已经有了 rate_limiter 为什么还需要判断 MCP_ERROR_RATE_LIMIT 错误
                 # 自定义 rate_limiter 只是能减少触发限流的可能；但是平台(阿里等)内部的限流机制我们并不清楚，所以采取双保险机制
-                if MCP_ERROR_RATE_LIMIT in error_msg :
+                if "429" in error_msg :
                     # 递增等待时间：5秒、10秒、15秒
                     wait_time = 5 * (attempt + 1)
-                    logger.warning(f"检测到{MCP_ERROR_RATE_LIMIT}错误，等待 {wait_time} 秒后重试...")
+                    logger.warning(f"检测到 429 错误，等待 {wait_time} 秒后重试...")
                     time.sleep(wait_time)
                 # 非429错误，短暂等待后重试
                 elif attempt < 2:
@@ -214,7 +214,7 @@ class WebSearchAgent(MCPAgent):
                 continue
         return None
 
-    def extract_pages_from_mcp_response(response, config=None):
+    def extract_pages_from_mcp_response(self, response, config=None):
         """从MCP WebSearch响应中提取pages数据（重构版）
         Args:
         response: MCP响应对象
@@ -230,7 +230,7 @@ class WebSearchAgent(MCPAgent):
             "paths": [
                 "$.pages",                  # 直接在第一层
                 "$.data.pages",             # data路径
-                "$.result.content[0].text"  # result.content路径
+                "$.result.content[0].text",  # result.content路径
                 "$.choices[0].message.content",
                 # 未来新增路径只需加在这里，无需改逻辑
             ]

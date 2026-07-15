@@ -1,13 +1,14 @@
 # configuration.py    Agent 相关配置项，涉及大模型配置的
 
 # 顶部必须明确定义导出接口
-__all__ = ["Configuration"]
+# __all__ = ["Configuration"]
 
-
+import json
 import os
-import jsonUtils
 from pydantic import BaseModel, Field
 from typing import Any, Optional, List
+
+from agent.jsonUtils import *
 
 from langchain_core.runnables import RunnableConfig
 
@@ -21,7 +22,7 @@ class ModelConfig(BaseModel) :
 
 def load_available_models_from_env() :
     """从环境变量加载可用模型"""
-    model_json = os.getenv(AVAILABLE_MODELS)
+    model_json = os.getenv("AVAILABLE_MODELS")
 
     if not model_json :
         # 兜底模型
