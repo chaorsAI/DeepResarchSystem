@@ -1,4 +1,13 @@
-# graph.py    Langgraph 图核心定义
+# graph.py    Langgraph 图核心定义-主智能体定义
+
+"""DeepResearch多智能体
+由三个子智能体组成：
+1. 计划阶段（主图，包含人机交互）
+2. 研究智能体（子图）— 查询 → 搜索 → 评估循环
+3. 写作智能体（子图）— 提纲 → 草稿 → 引用和润色
+原有的单体图重构，每个阶段都成为一个自包含、可独立测试的子图。
+"""
+
 from typer.cli import state
 
 from agent import JsonAgent
@@ -30,7 +39,10 @@ from agent.agent import (
     WebSearchAgent
 )
 from agent.jsonUtils import *
-
+from agent.sub_graph import (
+    research_agent_graph,
+    writer_agent_graph
+)
 
 from loguru import logger
 import json
@@ -122,131 +134,6 @@ def evaluate_plan(state: OverallState, config: RunnableConfig) -> ReflectionStat
         if result.satisfy:
             return GENERATE_SEARCH_NODE
         return SEARCH_REPLAN
-
-def generate_search(state : OverallState, config : RunnableConfig) -> QueryGenerationState :
-    """
-    基于用户 的自然语言请求，拆解出搜索关键字
-    使用LLM为用户的问题创建优化的网络搜索查询，用于网络研究。
-    :param state:
-    :param config:
-    :return:
-
-    核心流程：
-    1. 配置传入
-    2. 大模型拆解：提示词构造、大模型通信、格式化输出
-    3. 结果传递
-    """
-
-    logger.info(f"LangGraph节点开始运行.....，配置：[{config}]")
-    configuration = Configuration.runnable_config(config)
-    if state.get["initial_search_query_count"] is None:
-        state["initial_search_query_count"] = configuration.number_of_initial_queries
-
-    agent = JsonAgent(model_id=configuration.query_generator_model, keys=SearchQueryList)
-    agent.set_step_prompt(query_writer_instructions)
-    result = agent.step(
-        current_date=get_current_date(),
-        research_topic=get_research_topic(state["messages"]),
-        number_queries=state["initial_search_query_count"],
-        research_proposal=state.get("plan", "")     # 这里加了人类确定的研究计划
-    )
-
-    logger.info(f"待搜索内容生成结果: {result}")
-    return {"search_query": result.query}
-
-def web_search(state: WebSearchState, config: RunnableConfig) -> OverallState:
-    """
-    网络搜索节点
-    Args:
-        state: 包含搜索查询和研究循环计数的当前图状态
-        config: 可运行配置，包括搜索API设置
-
-    Returns:
-        包含状态更新的字典，包括sources_gathered、research_loop_count和web_search_results
-    """
-    logger.info(f"开始网络搜索......")
-    # 配置
-    configurable = Configuration.runnable_config(config)
-    web_searcher = WebSearchAgent()
-
-    # 执行搜索
-    response = web_searcher.step(prompt=state["search_query"],
-                                 count=10)
-
-    # 检查搜索结果是否为空或None
-    if not response or response is None:
-        logger.error(f"网络搜索返回为空: {state['search_query']}")
-        return {
-            "sources_gathered": [],
-            "search_query": [state["search_query"]],
-            "web_search_result": [f"未找到关于 '{state['search_query']}' 的搜索结果"],
-        }
-
-    # 长URL到短URL的映射：节省Token上下文长度
-    # https://search.com/id/0 - 3 代替
-    # 再最终报告中再替换回原始URL，保障引用准确性
-    long2short_url_mappings = resolve_urls(response, state["id"])
-    sources_gathered = [
-        {"short_url": long2short_url_mappings[item["url"]], "value": item["url"], "label": item["title"]} for item in
-        response]
-    web_search_result = [
-        {"snippet": item["snippet"], "title": item["title"], "url": long2short_url_mappings[item["url"]]} for item in
-        response]
-    web_search_result = json.dumps(web_search_result, ensure_ascii=False, indent=4)
-
-    agent = Agent(model_id=configurable.query_generator_model)
-    agent.set_step_prompt(web_searcher_instructions)
-    modified_text = agent.step(query=state["search_query"], current_date=get_current_date(),
-                               web_search_result=web_search_result)
-    modified_text = JsonUtils.extract_pattern(modified_text, pattern="text")
-
-    logger.info(f"搜索标题: {state['search_query']}")
-    logger.debug(f"网络搜索结果: {modified_text}")
-    return {
-        "sources_gathered": sources_gathered,
-        "search_query": [state["search_query"]],
-        "web_search_result": [modified_text],
-    }
-
-def critique(state: OverallState, config: RunnableConfig) -> ReflectionState:
-    """
-    识别知识差距并生成潜在后续查询的节点
-
-    分析当前摘要以识别需要进一步研究的领域，并生成潜在的后续查询。
-    使用结构化 输出来提取JSON格式的后续查询。
-
-    :param state: 当前图状态
-    :param config: 运行配置
-    :return: 包含状态更新的字典，包括search_query键，包含生成的后续查询
-    """
-
-    logger.info(f"反思分析识别知识差距并生成潜在后续查询的节点工作......")
-    configurable = Configuration.from_runnable_config(config)
-    # 增加研究循环计数并获取推理模型
-    state["research_loop_count"] = state.get("research_loop_count", 0) + 1
-    reasoning_model = state.get("reasoning_model", configurable.reflection_model)
-    logger.info(f"critique反思节点模型：{reasoning_model}")
-
-    # 格式化输出
-    agent = JsonAgent(model_id=reasoning_model, keys=Reflection)
-    agent.set_step_prompt(reflection_instructions)
-    result = agent.step(
-        ccurrent_date=get_current_date(),
-        number_queries=state["initial_search_query_count"],
-        research_topic=get_research_topic(state["messages"]),
-        summaries="\n\n---\n\n".join(state["web_search_result"]),
-        research_proposal=state.get("plan", "")
-    )
-
-    logger.info(f"反思分析：{result}")
-    return {
-        "is_sufficient": result.is_sufficient,
-        "knowledge_gap": result.knowledge_gap,
-        "follow_up_queries": result.follow_up_queries,
-        "research_loop_count": state["research_loop_count"],
-        "number_of_ran_queries": len(state["search_query"]),
-        "max_research_loops": state.get("max_research_loops", configurable.max_research_loops),
-    }
 
 def final_answer(state: OverallState, config: RunnableConfig):
     """
@@ -341,14 +228,10 @@ def route_evaluate(state: OverallState, config: RunnableConfig) -> OverallState:
 
 
 # ---图构建
-builder = StateGraph(OverallState, context_schema=None)
+builder = StateGraph(OverallState, context_schema=Configuration)
 
 # 图节点
 builder.add_node(GENERATE_PLAN_NODE, generate_plan)
-builder.add_node(GENERATE_SEARCH_NODE, generate_search)
-builder.add_node(WEB_SEARCH_NODE, web_search)
-builder.add_node(CRITIQUE_NODE, critique)
-builder.add_node(FINAL_ANSWER_NODE, final_answer)
 # 人类干预：Human-in-the-loop
 # 方法1：手动模拟节点：业务层忙等，节点不退出，执行线程被持续占用。处理不好容易出死锁
 # 等待确认，不做任何额外处理；用户确认后转发 state
@@ -378,20 +261,21 @@ builder.add_node(SEARCH_REPLAN, lambda state, config: {"plan_status": "unconfirm
 # builder.add_node(AWAITING_PLAN_CONFIRMATION, awaiting_plan_confirmation)
 # builder.add_node(SEARCH_REPLAN, search_replan)
 
+# 子图节点
+builder.add_node(RESEARCH_AGENT_NODE, research_agent_graph)
+builder.add_node(WRITER_AGENT_NODE, writer_agent_graph)
+
 # 边定义
 builder.add_edge(START, GENERATE_PLAN_NODE)
 # 条件边：人类干预是否认可研究计划
-builder.add_conditional_edges(GENERATE_PLAN_NODE, evaluate_plan, [GENERATE_SEARCH_NODE, SEARCH_REPLAN, AWAITING_PLAN_CONFIRMATION])
+builder.add_conditional_edges(GENERATE_PLAN_NODE, evaluate_plan, [RESEARCH_AGENT_NODE, SEARCH_REPLAN, AWAITING_PLAN_CONFIRMATION])
 # 重新生成计划
 builder.add_edge(SEARCH_REPLAN, GENERATE_PLAN_NODE)
 # 子话题并行搜索
-builder.add_conditional_edges(GENERATE_SEARCH_NODE, send_to_web_search,path_map=[WEB_SEARCH_NODE])
-builder.add_edge(WEB_SEARCH_NODE, CRITIQUE_NODE)
-builder.add_conditional_edges(CRITIQUE_NODE, route_evaluate, path_map=[WEB_SEARCH_NODE, FINAL_ANSWER_NODE])
-# 最终确定答案
-builder.add_edge(FINAL_ANSWER_NODE, END)
+builder.add_edge(RESEARCH_AGENT_NODE, WRITER_AGENT_NODE)
+builder.add_edge(WRITER_AGENT_NODE, END)
 
 # 图编译
 graph = builder.compile(name=DEEP_RESEARCH_AGENT)
 
-display(Image(graph.get_graph().draw_mermaid_png(output_file_path='./graph_images/HITL版.png')))
+display(Image(graph.get_graph().draw_mermaid_png(output_file_path='./graph_images/MAS_plan.png')))

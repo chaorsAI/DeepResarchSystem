@@ -21,6 +21,8 @@ FINAL_ANSWER_NODE = "final_answer"
 AWAITING_PLAN_CONFIRMATION = "awaiting_plan_confirmation"
 SEARCH_REPLAN = "search_replan"
 
+RESEARCH_AGENT_NODE = "reasearch_agent_node"
+WRITER_AGENT_NODE = "writer_agent_node"
 
 ## MCP错误码
 MCP_ERROR_RATE_LIMIT = "429"    # 当前阿里百炼的限流错误码为429
