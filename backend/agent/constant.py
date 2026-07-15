@@ -17,6 +17,9 @@ WEB_SEARCH_NODE = "web_search"
 CRITIQUE_NODE = "critique"
 # 最终结果
 FINAL_ANSWER_NODE = "final_answer"
+#
+AWAITING_PLAN_CONFIRMATION = "awaiting_plan_confirmation"
+SEARCH_REPLAN = "search_replan"
 
 
 ## MCP错误码

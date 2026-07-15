@@ -55,3 +55,10 @@ def resolve_urls(urls_to_resolve: List[Any], id: int) -> Dict[str, str]:
             resolved_map[url] = f"{prefix}{id}-{idx}"
 
     return resolved_map
+
+
+def get_last_user_response(messages: List[AnyMessage]) -> str:
+    user_messages = [msg for msg in messages if isinstance(msg, HumanMessage)]
+    if user_messages:
+        return f"User: {user_messages[-1].content}\n"
+    return ""
