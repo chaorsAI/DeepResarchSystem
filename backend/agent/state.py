@@ -32,6 +32,8 @@ class OverallState(TypedDict):
     plan_status: str
     # 计划相关消息
     plan_messages: Annotated[list, add_messages]
+    # 人类对计划的反馈信息。用于 interrupt 机制
+    user_feedback: str
 
 # 反思节点状态
 class ReflectionState(TypedDict):
