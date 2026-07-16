@@ -26,3 +26,21 @@ class PlanReflection(BaseModel):
     satisfy: bool = Field(
         description="用户对生成的研究计划是否满意."
     )
+
+class OutlineModel(BaseModel):
+    report_outline: str = Field(
+        description="子图大纲节点根据资料生成的大纲内容."
+    )
+
+class DraftModel(BaseModel):
+    report_draft: str = Field(
+        description="子图草稿节点根据大纲生成的草稿内容."
+    )
+
+class PolishModel(BaseModel):
+    messages: List[str] = Field(
+        description="子图审稿节点根据草稿润色确定最终报告."
+    )
+    sources_gathered: List[str] = Field(
+        description="相关引用来源信息."
+    )

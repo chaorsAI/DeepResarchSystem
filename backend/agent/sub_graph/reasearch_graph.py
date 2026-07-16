@@ -1,3 +1,15 @@
+#reasearch_graph.py    ResearchAgent 子图
+"""
+封装了核心研究循环：
+
+1. generate_queries — 将主题分解为搜索查询
+
+2. web_search（并行扇出）— 搜索并汇总每个查询
+
+3. critique — 评估信息是否充分；如有必要，则循环返回步骤 (1)
+
+当评估认为信息充分或达到 max_research_loops 时，循环终止。
+"""
 
 from __future__ import annotations
 import json
@@ -17,7 +29,7 @@ from backend.agent.prompts import (
 from backend.agent.utils import (
     get_current_date
 )
-from backend.agent.state import OverallState, QueryGenerationState, WebSearchState
+from backend.agent.state import OverallState, QueryGenerationState, WebSearchState, ReflectionState
 from backend.agent.tools_and_schemas import Reflection, SearchQueryList
 from backend.agent.utils import get_research_topic, resolve_urls
 from backend.agent.constant import *
@@ -194,9 +206,9 @@ _builder.add_conditional_edges(GENERATE_SEARCH_NODE, _fan_out_to_web_search, [WE
 _builder.add_edge(WEB_SEARCH_NODE, CRITIQUE_NODE)
 _builder.add_conditional_edges(CRITIQUE_NODE, _route_after_critique, [WEB_SEARCH_NODE, END])
 
-research_agent_graph = _builder.compile(name=DEEP_RESEARCH_AGENT)
+research_agent_graph = _builder.compile(name=SUB_RESEARCH_AGENT)
 
-display(Image(research_agent_graph.get_graph().draw_mermaid_png(output_file_path="./graph_images/ResearchAgent子图.png")))
+display(Image(research_agent_graph.get_graph().draw_mermaid_png(output_file_path="../graph_images/ResearchAgent子图.png")))
 
 
 
