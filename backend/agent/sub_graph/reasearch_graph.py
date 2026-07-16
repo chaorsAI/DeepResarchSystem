@@ -2,27 +2,32 @@
 from __future__ import annotations
 import json
 from dotenv import load_dotenv
-from loguru import logger
 
-from agent.agent import Agent, JsonAgent, WebSearchAgent
-from agent.configuration import Configuration
-from agent.jsinUtils import JsonUtils
-from agent.prompts import (
-    get_current_date,
+from loguru import logger
+from IPython.display import Image, display
+
+from backend.agent.agent import Agent, JsonAgent, WebSearchAgent
+from backend.agent.configuration import Configuration
+from backend.agent.jsonUtils import JsonUtils
+from backend.agent.prompts import (
     query_writer_instructions,
     reflection_instructions,
     web_searcher_instructions,
 )
-from agent.state import OverallState, QueryGenerationState, WebSearchState
-from agent.tools_and_schemas import Reflection, SearchQueryList
-from agent.utils import get_research_topic, resolve_urls
+from backend.agent.utils import (
+    get_current_date
+)
+from backend.agent.state import OverallState, QueryGenerationState, WebSearchState
+from backend.agent.tools_and_schemas import Reflection, SearchQueryList
+from backend.agent.utils import get_research_topic, resolve_urls
+from backend.agent.constant import *
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 
-def generate_search(state : OverallState, config : RunnableConfig) -> QueryGenerationState :
+def _generate_search(state : OverallState, config : RunnableConfig) -> QueryGenerationState :
     """
     基于用户 的自然语言请求，拆解出搜索关键字
     使用LLM为用户的问题创建优化的网络搜索查询，用于网络研究。
@@ -156,3 +161,46 @@ def _critique(state: OverallState, config: RunnableConfig) -> ReflectionState:
         "number_of_ran_queries": len(state["search_query"]),
         "max_research_loops": state.get("max_research_loops", configurable.max_research_loops),
     }
+
+def _route_after_critique(state: OverallState, config: RunnableConfig):
+    """
+    critique 完成后的执行路有
+    :param state:
+    :param config:
+    :return:
+    """
+
+    configuration = Configuration.runnable_config(config)
+    max_loops = state.get("max_research_loops") or configuration.max_research_loops
+    if state["is_sufficient"] or state["research_loop_count"] >= max_loops:
+        logger.info(f"[ResearchAgent] 退出循环，已执行 {state['research_loop_count']} 次")
+        return END
+    else:
+        logger.info(f"[ResearchAgent] 继续循环 ({state['research_loop_count']}/{max_loops})")
+        return [
+            Send(WEB_SEARCH_NODE,
+                 {"search_query":query, "id":state["number_of_ran_queries"] + int(idx)})
+            for idx, query in enumerate(state["follow_up_queries"])
+        ]
+
+_builder = StateGraph(OverallState, context_schema=Configuration)
+
+_builder.add_node(GENERATE_SEARCH_NODE, _generate_search)
+_builder.add_node(WEB_SEARCH_NODE, _web_search)
+_builder.add_node(CRITIQUE_NODE, _critique)
+
+_builder.add_edge(START, GENERATE_SEARCH_NODE)
+_builder.add_conditional_edges(GENERATE_SEARCH_NODE, _fan_out_to_web_search, [WEB_SEARCH_NODE])
+_builder.add_edge(WEB_SEARCH_NODE, CRITIQUE_NODE)
+_builder.add_conditional_edges(CRITIQUE_NODE, _route_after_critique, [WEB_SEARCH_NODE, END])
+
+research_agent_graph = _builder.compile(name=DEEP_RESEARCH_AGENT)
+
+display(Image(research_agent_graph.get_graph().draw_mermaid_png(output_file_path="./graph_images/ResearchAgent子图.png")))
+
+
+
+
+
+
+

@@ -8,7 +8,7 @@ import os
 from pydantic import BaseModel, Field
 from typing import Any, Optional, List
 
-from agent.jsonUtils import *
+from backend.agent.jsonUtils import *
 
 from langchain_core.runnables import RunnableConfig
 

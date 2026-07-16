@@ -6,10 +6,10 @@ from jsonpath_ng.ext import parser as jsonpath_parser
 
 from openai.lib.azure import API_KEY_SENTINEL
 
-from agent.configuration import get_default_model_id
-from agent.llm import OpenAICompatibleLLM
-from agent.constant import *
-from agent.jsonUtils import *
+from backend.agent.configuration import get_default_model_id
+from backend.agent.llm import OpenAICompatibleLLM
+from backend.agent.constant import *
+from backend.agent.jsonUtils import *
 
 import os
 import copy

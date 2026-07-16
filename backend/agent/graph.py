@@ -10,16 +10,16 @@
 
 from typer.cli import state
 
-from agent import JsonAgent
-from agent.constant import *
-from agent.state import *
-from agent.configuration import *
-from agent.tools_and_schemas import (
+from backend.agent.agent import JsonAgent
+from backend.agent.constant import *
+from backend.agent.state import *
+from backend.agent.configuration import *
+from backend.agent.tools_and_schemas import (
     SearchQueryList,
     Reflection,
     PlanReflection
 )
-from agent.prompts import (
+from backend.agent.prompts import (
     query_writer_instructions,
     web_searcher_instructions,
     reflection_instructions,
@@ -27,19 +27,19 @@ from agent.prompts import (
     plan_instructions,
     plan_reflection_instructions
 )
-from agent.utils import (
+from backend.agent.utils import (
     get_current_date,
     get_research_topic,
     resolve_urls,
     get_last_user_response
 )
-from agent.agent import (
+from backend.agent.agent import (
     Agent,
     JsonAgent,
     WebSearchAgent
 )
-from agent.jsonUtils import *
-from agent.sub_graph import (
+from backend.agent.jsonUtils import *
+from backend.agent.sub_graph import (
     research_agent_graph,
     writer_agent_graph
 )
