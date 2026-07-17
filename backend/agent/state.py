@@ -34,6 +34,20 @@ class OverallState(TypedDict):
     plan_messages: Annotated[list, add_messages]
     # 人类对计划的反馈信息。用于 interrupt 机制
     user_feedback: str
+    # WriterAgent 内部状态
+    report_outline: str
+    report_draft: str
+    # ResearchAgent 循环控制
+    is_sufficient: bool
+    knowledge_gap: str
+    follow_up_queries: Annotated[list, operator.add]
+    number_of_ran_queries: int
+    # 评论循环状态 (Critic ↔ Writer 修订循环)
+    critic_feedback: str
+    critic_score: float
+    ready_for_polish: bool
+    revision_count: int
+    max_revisions: int
 
 # 反思节点状态
 class ReflectionState(TypedDict):

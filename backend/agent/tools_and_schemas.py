@@ -44,3 +44,51 @@ class PolishModel(BaseModel):
     sources_gathered: List[str] = Field(
         description="相关引用来源信息."
     )
+
+# ── Debate-loop Critic schemas ─────────────────────────────────────────
+
+class Issue(BaseModel):
+    """
+    评审员对改稿的修改建议
+    """
+    severity: str = Field(
+        description="严重程度: 'critical' (事实错误/逻辑断裂), 'major' (重要遗漏/论证不足), 'minor' (措辞/格式)"
+    )
+    location: str = Field(
+        description="问题在报告中的位置描述，如'第2.1节'或'结论部分'"
+    )
+    problem: str = Field(
+        description="具体问题描述"
+    )
+    suggestion: str = Field(
+        description="具体的修改建议"
+    )
+
+class ReviewModel(BaseModel):
+    """
+    对草稿的评审结果
+    """
+    overall_rating: float = Field(
+        ge=0, le=10,
+        description="综合评分 0-10。≥8=可发布, 6-7=需小修, 4-5=需大修, <4=需重写"
+    )
+    issues: list[Issue] = Field(
+        default_factory=list,
+        description="发现的具体问题列表"
+    )
+    ready_for_polish: bool = Field(
+        description="是否可以进入终审润色阶段"
+    )
+    summary: str = Field(
+        description="一句话总结整体评价"
+    )
+
+# class ReviewModel(BaseModel):
+#     critic_feedback: str = Field(
+#         description="子图评审节点草稿内容的反馈.包含审稿评分、综合评价、具体问题"
+#     )
+#     critic_score:>
+#
+# "critic_feedback": feedback,
+#         "critic_score": result.overall_rating,
+#         "ready_for_polish": result.ready_for_polish,
