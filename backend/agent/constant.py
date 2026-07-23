@@ -29,3 +29,9 @@ SUB_WRITER_AGENT = "sub_writer_agent"
 
 ## MCP错误码
 MCP_ERROR_RATE_LIMIT = "429"    # 当前阿里百炼的限流错误码为429
+
+# 模型ID常量
+MODEL_ID_FLASH = "qwen3.6-flash"
+MODEL_ID_PLUS = "qwen3.7-plus-2026-05-26"
+MODEL_ID_MAX = "qwen3.7-max-2026-05-20"
+MODEL_ID_JUDEG = "deepseek-v4-flash"

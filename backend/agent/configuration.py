@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from typing import Any, Optional, List
 
 from backend.agent.jsonUtils import *
+from backend.agent.constant import *
 
 from langchain_core.runnables import RunnableConfig
 
@@ -49,6 +50,10 @@ def get_default_model_id() :
     if models :
         return models[-1].id
     return "qwen3.7-max"  # 兜底默认值
+
+
+def get_judge_model_id() -> str:
+    return MODEL_ID_JUDEG  # LLM as Judge 默认值
 
 class Configuration(BaseModel) :
     """Agent 配置"""
