@@ -224,14 +224,24 @@ class Judger:
         result = self._call(prompt)
         return PlanScore(**result) if result else None
 
-    def evaluate_queries(self, *, queries: list[str], reason: str) -> QueryScore:
+    def evaluate_queries(
+            self, *, research_topic: str, queries: list[str], reason: str
+    ) -> QueryScore:
         """
         评估 查询 部分
-        :param queries: 
+        :param research_topic:
+        :param queries:
         :param reason: 
         :return: 
         """
-        return None
+        prompt = _safe_format(
+            QUERY_JUDGE_INSTRUCTIONS,
+            research_topic=research_topic,
+            queries=json.dumps(queries, ensure_ascii=False,indent=2),
+            reason=reason
+        )
+        result = self._call(prompt)
+        return QueryScore(**result) if result else None
 
     def evaluate_summarization(
             self, *, search_query: str, raw_search_results: str, summary: str
@@ -243,7 +253,14 @@ class Judger:
         :param summary:
         :return:
         """
-        return None
+        prompt = _safe_format(
+            SUMMARIZATION_JUDGE_INSTRUCTIONS,
+            search_query=search_query,
+            raw_search_results=raw_search_results[:12000],
+            summary=summary[:8000]
+        )
+        result = self._call(prompt)
+        return SummarizationScore(**result) if result else None
 
     def evaluate_critique(
             self,
@@ -263,7 +280,16 @@ class Judger:
         :param follow_up_queries:
         :return:
         """
-        return None
+        prompt = _safe_format(
+            CRITIQUE_JUDGE_INSTRUCTIONS,
+            research_topic=research_topic,
+            summaries=summaries[:12000],
+            is_sufficient=is_sufficient,
+            knowledge_gap=knowledge_gap,
+            follow_up_queries=json.dumps(follow_up_queries, ensure_ascii=False),
+        )
+        result = self._call(prompt)
+        return CritiqueScore(**result) if result else None
 
     def evaluate_citations(self, *, sources: str, report: str) -> CitationScore:
         """
@@ -272,7 +298,13 @@ class Judger:
         :param report:
         :return:
         """
-        return None
+        prompt = _safe_format(
+            CITATION_JUDGE_INSTRUCTIONS,
+            sources=sources[:12000],
+            report=report[:12000],
+        )
+        result = self._call(prompt)
+        return CitationScore(**result) if result else None
 
     def evaluate_plan_query_alignment(
             self, *, plan: str, queries: list[str]
@@ -283,7 +315,13 @@ class Judger:
         :param queries:
         :return:
         """
-        return None
+        prompt = _safe_format(
+            PLAN_QUERY_ALIGNMENT_JUDGE_INSTRUCTIONS,
+            plan=plan[:8000],
+            queries=json.dumps(queries, ensure_ascii=False, indent=2),
+        )
+        result = self._call(prompt)
+        return PlanQueryAlignmentScore(**result) if result else None
 
     def evaluate_plan_reflection(
             self, *,
@@ -302,5 +340,14 @@ class Judger:
         :param expected_intent:
         :return:
         """
-        return None
+        prompt = _safe_format(
+            PLAN_REFLECTION_JUDGE_INSTRUCTIONS,
+            original_plan=original_plan[:8000],
+            user_feedback=user_feedback,
+            new_plan=new_plan[:8000] if new_plan else "(未发生重新计划，系统判断用户已确认并直接继续执行)",
+            actual_behavior=actual_behavior,
+            expected_intent=expected_intent,
+        )
+        result = self._call(prompt)
+        return PlanReflectionScore(**result) if result else None
 

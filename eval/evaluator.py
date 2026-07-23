@@ -109,7 +109,7 @@ class Evaluator:
         for i, cfg in enumerate(topics):
             logger.info(f"组件级 [{i + 1}/{len(topics)}] 主题={cfg.topic[:80]}...")
             try:
-                results.append(self._invoke_search_agent(cfg))
+                results.append(self._eval_components(cfg))
             except Exception as exc:
                 logger.error(f"组件级评估失败 '{cfg.topic[:60]}': {exc}")
                 results.append(ComponentResult(topic=cfg.topic, error=str(exc)))
@@ -119,7 +119,7 @@ class Evaluator:
         result = ComponentResult(topic=cfg.topic)
 
         # 通过共享辅助方法运行完整流水线（如配置了反馈则处理反馈）
-        agent_result = self._invoke_agent_with_feedback(cfg)
+        agent_result = self._invoke_search_agent(cfg)
 
         # 原始计划
         plan_a = agent_result["plan_a"]
@@ -137,6 +137,73 @@ class Evaluator:
             result.plan_score = self.judge.evaluate_plan(
                 research_topic=cfg.topic, plan=effective_plan
             )
+
+            # 评估计划反思（仅在提供了用户反馈时）
+            if cfg.user_feedback and cfg.expected_intent:
+                result.plan_reflection_score = self.judger.evaluate_plan_reflection(
+                    original_plan=plan_a,
+                    user_feedback=cfg.user_feedback,
+                    new_plan=plan_b,
+                    actual_behavior=actual_behavior,
+                    expected_intent=cfg.expected_intent,
+                )
+
+            # 评估搜索查询
+            search_queries = phase2.get("search_query", [])
+            if search_queries:
+                query_list = list(search_queries) if isinstance(search_queries, list) else []
+                result.query_score = self.judger.evaluate_queries(
+                    research_topic=cfg.topic,
+                    queries=query_list,
+                    rationale="（内部推理未捕获；参见计划上下文）",
+                )
+
+                # 评估计划 → 查询对齐（针对用于研究的计划）
+                if effective_plan and query_list:
+                    result.plan_query_alignment_score = (
+                        self.judger.evaluate_plan_query_alignment(
+                            plan=effective_plan,
+                            queries=query_list
+                        )
+                    )
+
+            # 评估摘要保真度（针对每个捕获的原始搜索结果）
+            web_search_results = phase2.get("web_search_result", [])
+            for idx, (raw, summary) in enumerate(zip(raw_results, web_search_results)):
+                if not raw or not summary:
+                    continue
+                score = self.judger.evaluate_summarization(
+                    search_query=raw.get("query", ""),
+                    raw_search_results=json.dumps(raw.get("pages", []), ensure_ascii=False, indent=2),
+                    summary=str(summary),
+                )
+                if score:
+                    result.summarization_scores.append(score)
+
+            # 评估反思
+            is_sufficient = phase2.get("is_sufficient")
+            if is_sufficient is not None:
+                result.critique_score = self.judger.evaluate_critique(
+                    research_topic=cfg.topic,
+                    summaries="\n---\n".join(
+                        str(s) for s in phase2.get("web_search_result", [])
+                    ),
+                    is_sufficient=bool(is_sufficient),
+                    knowledge_gap=phase2.get("knowledge_gap", ""),
+                    follow_up_queries=phase2.get("follow_up_queries", []),
+                )
+
+            # 评估最终报告中的引用
+            report = agent_result["report"]
+            if report:
+                sources = agent_result["sources"]
+                if sources and sources != "[]":
+                    result.citation_score = self.judger.evaluate_citations(
+                        sources=sources, report=report
+                    )
+
+            return result
+
 
     def _invoke_search_agent(self, cfg: TopicCfg) -> E2EResult:
         """
