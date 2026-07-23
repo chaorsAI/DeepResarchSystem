@@ -117,8 +117,10 @@ class Judger:
     def evaluate_report(
         self, *, research_topic: str, search_sources: str, report: str
     ) -> E2EScore:
-        result = self._call(E2E_JUDGE_INSTRUCTIONS,
+        prompt = _safe_format(E2E_JUDGE_INSTRUCTIONS,
             research_topic=research_topic,
             search_sources=search_sources,
-            report=report)
+            report=report,
+        )
+        result = self._call(prompt)
         return E2EScore(**result) if result else None
