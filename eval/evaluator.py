@@ -42,13 +42,25 @@ class E2EResult:
     error: str | None = None
 
 @dataclass
+class ComponentResult:
+    topic: str
+    plan_score: PlanScore | None = None
+    plan_query_alignment_score: PlanQueryAlignmentScore | None = None
+    query_score: QueryScore | None = None
+    summarization_scores: list[SummarizationScore] = field(default_factory=list)
+    critique_score: CritiqueScore | None = None
+    citation_score: CitationScore | None = None
+    plan_reflection_score: PlanReflectionScore | None = None
+    error: str | None = None
+
+@dataclass
 class EvalReport:
     """
     评估报告
     """
     timestamp: str
     e2e_results: list[E2EResult] = field(default_factory=list)
-
+    component_results: list[ComponentResult] = field(default_factory=list)
 
 # ---------- 评估编排器 ----------
 class Evaluator:
@@ -87,6 +99,44 @@ class Evaluator:
                 logger.error(f"端到端评估失败 '{cfg.topic[:60]}': {exc}")
                 results.append(E2EResult(topic=cfg.topic, error=str(exc)))
         return results
+
+    # --- 端到端 ---
+    def run_components(self, topics: list[TopicCfg]) -> list[ComponentResult]:
+        """
+        对每个主题独立评估各个 agent 节点。
+        """
+        results: list[ComponentResult] = []
+        for i, cfg in enumerate(topics):
+            logger.info(f"组件级 [{i + 1}/{len(topics)}] 主题={cfg.topic[:80]}...")
+            try:
+                results.append(self._invoke_search_agent(cfg))
+            except Exception as exc:
+                logger.error(f"组件级评估失败 '{cfg.topic[:60]}': {exc}")
+                results.append(ComponentResult(topic=cfg.topic, error=str(exc)))
+        return results
+
+    def _eval_components(self, cfg: TopicCfg) -> ComponentResult:
+        result = ComponentResult(topic=cfg.topic)
+
+        # 通过共享辅助方法运行完整流水线（如配置了反馈则处理反馈）
+        agent_result = self._invoke_agent_with_feedback(cfg)
+
+        # 原始计划
+        plan_a = agent_result["plan_a"]
+        # 原始计划不通过，重新规划的计划
+        plan_b = agent_result["plan_b"]
+        # 实际执行行为
+        actual_behavior = agent_result["actual_behavior"]
+        phase2 = agent_result["phase2_state"]
+
+        # 实际用于研究的计划
+        effective_plan = plan_b if plan_b else plan_a
+
+        # 评估计划（用于研究的那个）
+        if effective_plan:
+            result.plan_score = self.judge.evaluate_plan(
+                research_topic=cfg.topic, plan=effective_plan
+            )
 
     def _invoke_search_agent(self, cfg: TopicCfg) -> E2EResult:
         """

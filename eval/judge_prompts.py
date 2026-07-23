@@ -78,3 +78,38 @@ E2E_JUDGE_INSTRUCTIONS = """# 任务说明
 {report}
 
 # 输出"""
+
+
+# ============================================================
+# 组件级：计划生成
+# ============================================================
+
+PLAN_JUDGE_INSTRUCTIONS = """# 任务说明
+评估AI生成的研究计划的合理性。研究计划应该在开始搜索前帮助澄清用户需求。
+
+# 评分维度
+1. **需求覆盖率 (Requirement Coverage)**: 是否覆盖了5大关键要素？(1-5分)
+2. **问题清晰度 (Question Clarity)**: 追问是否精准、具体、有引导性？(1-5分)
+3. **结构合理性 (Structure Quality)**: 计划是否清晰可执行？(1-5分)
+
+# 输出格式
+```json
+{
+  "requirement_coverage": {"score": 4, "reason": "..."},
+  "question_clarity": {"score": 4, "reason": "..."},
+  "structure_quality": {"score": 3, "reason": "..."},
+  "overall_score": 3.67,
+  "missing_dimensions": ["维度1", "维度2"],
+  "assessment": "整体评价..."
+}
+```
+
+# 研究主题
+{research_topic}
+
+# 生成的计划
+{plan}
+
+# 输出"""
+
+

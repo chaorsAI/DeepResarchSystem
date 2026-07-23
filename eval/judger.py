@@ -215,7 +215,14 @@ class Judger:
         :param plan:
         :return:
         """
-        return None
+        prompt = _safe_format(
+            PLAN_JUDGE_INSTRUCTIONS,
+            research_topic=research_topic,
+            # 上下文截断，防止 LLM 出现严重的位置偏见。这里更好的方式是先进行摘要
+            plan=plan[:8000]
+        )
+        result = self._call(prompt)
+        return PlanScore(**result) if result else None
 
     def evaluate_queries(self, *, queries: list[str], reason: str) -> QueryScore:
         """
