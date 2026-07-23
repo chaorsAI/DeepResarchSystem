@@ -37,6 +37,88 @@ class E2EScore(BaseModel):
     overall_assessment: str             # 整体评价
     hallucination_check: dict           # 幻觉检查
 
+class PlanScore(BaseModel):
+    requirement_coverage: JudgeScore
+    question_clarity: JudgeScore
+    structure_quality: JudgeScore
+    overall_score: float
+    missing_dimensions: list[str] = Field(default_factory=list)
+    assessment: str
+
+
+class QueryScore(BaseModel):
+    coverage: JudgeScore
+    independence: JudgeScore
+    search_friendliness: JudgeScore
+    overall_score: float
+    missing_angles: list[str] = Field(default_factory=list)
+    assessment: str
+
+
+class SummarizationScore(BaseModel):
+    factual_fidelity: JudgeScore
+    key_info_extraction: JudgeScore
+    source_attribution: JudgeScore
+    overall_score: float
+    hallucinations: list[str] = Field(default_factory=list)
+    assessment: str
+
+
+class CritiqueScore(BaseModel):
+    sufficiency_judgment: JudgeScore
+    gap_identification: JudgeScore
+    follow_up_query_quality: JudgeScore
+    overall_score: float
+    is_sufficiency_correct: bool
+    assessment: str
+
+
+class CitationPerRef(BaseModel):
+    """单条引用审计记录。"""
+    url: str
+    label: str = ""
+    paragraph_summary: str = ""
+    source_title: str = ""
+    status: str = ""  # valid | weak | content_mismatch | url_not_found
+    reason: str = ""
+
+
+class CitationSummaryStats(BaseModel):
+    valid_rate: float = 0.0
+    most_common_issue: str = ""
+    worst_offender_url: str = ""
+
+
+class CitationScore(BaseModel):
+    total_citations: int
+    valid_citations: int
+    weak_citations: int = 0
+    invalid_citations: int
+    per_citation: list[CitationPerRef] = Field(default_factory=list)
+    citation_accuracy_score: int = Field(ge=1, le=5)
+    summary_stats: CitationSummaryStats | None = None
+    assessment: str
+
+
+class PlanQueryAlignmentScore(BaseModel):
+    coverage_consistency: JudgeScore
+    plan_fidelity: JudgeScore
+    structural_decomposition: JudgeScore
+    overall_score: float
+    covered_dimensions: list[str] = Field(default_factory=list)
+    missed_dimensions: list[str] = Field(default_factory=list)
+    cross_reference_table: list[dict] = Field(default_factory=list)
+    assessment: str
+
+
+class PlanReflectionScore(BaseModel):
+    intent_recognition: JudgeScore
+    feedback_incorporation: JudgeScore
+    overall_score: float
+    actual_behavior: str = ""
+    assessment: str
+
+
 def _safe_format(template: str, **kwargs) -> str:
     """
     解决极端边界场景：被替换的“值”里，恰好包含了“占位符”的字符串。
@@ -124,3 +206,94 @@ class Judger:
         )
         result = self._call(prompt)
         return E2EScore(**result) if result else None
+
+    # -- 组件级评估 --
+    def evaluate_plan(self, *, research_topic: str, plan: str) -> PlanScore:
+        """
+        评估 计划 部分
+        :param research_topic:
+        :param plan:
+        :return:
+        """
+        return None
+
+    def evaluate_queries(self, *, queries: list[str], reason: str) -> QueryScore:
+        """
+        评估 查询 部分
+        :param queries: 
+        :param reason: 
+        :return: 
+        """
+        return None
+
+    def evaluate_summarization(
+            self, *, search_query: str, raw_search_results: str, summary: str
+    ) -> SummarizationScore:
+        """
+        摘要 部分评估
+        :param search_query:
+        :param raw_search_results:
+        :param summary:
+        :return:
+        """
+        return None
+
+    def evaluate_critique(
+            self,
+            *,
+            research_topic: str,
+            summaries: str,
+            is_sufficient: bool,
+            knowledge_gap: str,
+            follow_up_queries: list[str],
+    ) -> CritiqueScore:
+        """
+        反思审计 部分评估
+        :param research_topic:
+        :param summaries:
+        :param is_sufficient:
+        :param knowledge_gap:
+        :param follow_up_queries:
+        :return:
+        """
+        return None
+
+    def evaluate_citations(self, *, sources: str, report: str) -> CitationScore:
+        """
+        引用 部分评估
+        :param sources:
+        :param report:
+        :return:
+        """
+        return None
+
+    def evaluate_plan_query_alignment(
+            self, *, plan: str, queries: list[str]
+    ) -> PlanQueryAlignmentScore:
+        """
+        计划/查询 对齐性评估
+        :param plan:
+        :param queries:
+        :return:
+        """
+        return None
+
+    def evaluate_plan_reflection(
+            self, *,
+            original_plan: str,
+            user_feedback: str,
+            new_plan: str,
+            actual_behavior: str,
+            expected_intent: str
+    ) -> PlanReflectionScore:
+        """
+        计划反思/需求澄清 部分评估
+        :param original_plan:
+        :param user_feedback:
+        :param new_plan:
+        :param actual_behavior:
+        :param expected_intent:
+        :return:
+        """
+        return None
+
