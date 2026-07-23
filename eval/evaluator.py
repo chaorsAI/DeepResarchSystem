@@ -4,6 +4,8 @@
 from backend.agent.configuration import Configuration
 from backend.agent.graph import graph
 from eval.judger import *
+from hook_context import HookContext
+from backend.agent import agent
 
 from __future__ import annotations
 import json
@@ -11,8 +13,8 @@ import os
 import sys
 import textwrap
 from dataclasses import dataclass, field
-from typing import Any
 from dotenv import load_dotenv
+from typing import Any, Dict, List
 
 from loguru import logger
 
@@ -61,6 +63,63 @@ class EvalReport:
     timestamp: str
     e2e_results: list[E2EResult] = field(default_factory=list)
     component_results: list[ComponentResult] = field(default_factory=list)
+
+
+class WebSearchCapture:
+    """
+    业务实体：负责捕获搜索结果。
+    通过 monkey-patch 注入 WebSearchAgent 的线程局部捕获容器。
+    它只是一个普通的 Python 类，不依赖任何 Hook 框架。
+    """
+
+    def __init__(self):
+        self.raw_results: List[Dict[str, Any]] = []
+
+    def post_hook_handler(self, result: Any, args: tuple, kwargs: dict) -> Any:
+        """
+        符合 HookContext 约定的回调函数。
+        注意：这个方法之所以叫 handler，是因为它是被动调用的。
+        HookContext 约定了参数签名 (result, args, kwargs)。
+        """
+        # 业务假设：WebSearchAgent.step(self, prompt)
+        if len(args) > 1:
+            prompt = args[1]
+            self.raw_results.append({
+                "query": prompt,
+                "pages": result
+            })
+        return result  # 必须返回 result，这是 Hook 契约的一部分
+
+    def get_last(self) -> Dict[str, Any] | None:
+        return self.raw_results[-1] if self.raw_results else None
+
+def _get_raw_result(prompt: str):
+    """
+    无侵入 hook 获取 WebSearchAgent 查询到的原始内容
+    评估服务：组装 Hook 框架和业务逻辑
+    :param prompt:
+    :return:
+    """
+    raw_data = None
+    # 1. 实例化业务对象
+    capture = WebSearchCapture()
+
+    # 2. 实例化框架对象，并将业务对象的“方法”作为回调函数注入
+    #    这里完成了依赖注入（DI）
+    with HookContext(
+            target=(agent.WebSearchAgent, "step"),
+            post_hook=capture.post_hook_handler  # 注入回调，而非继承或组合
+    ):
+        # 3. 执行业务流程
+        summary = agent.WebSearchAgent.step(prompt)
+
+    # 4. 从业务对象中提取数据
+    raw_data = capture.get_last()
+
+    logger.info(f"Summary: {summary}")
+    logger.info(f"Raw Data: {raw_data}")
+
+    return raw_data
 
 # ---------- 评估编排器 ----------
 class Evaluator:
