@@ -12,6 +12,7 @@ dependencies = [
     "langgraph-sdk>=0.3.13",
     "langgraph-cli",
     "langgraph-api",
+    "langgraph-checkpoint-redis",
     "openai",
     "fastapi==0.115.9",
     "dashscope",
@@ -20,6 +21,7 @@ dependencies = [
     "python-dotenv>=1.0.1",
     "ipython>=9.15.0",
     "llm>=0.31.1",
+
 ]
 
 # 可选组件
