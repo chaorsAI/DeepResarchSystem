@@ -24,44 +24,100 @@ from dashscope import Application
 
 load_dotenv()
 
-class RateLimiter :
+
+class TokenBucketRateLimiter:
     """
-    基于令牌桶算法的速率限制器
-    用于控制API请求频率，避免触发429错误
+    基于标准令牌桶算法的速率限制器
+    支持突发流量，用于控制API请求频率，避免触发429错误
     """
-    def __init__(self, max_qps : float = 15.0):
-        """初始化速率限制器"""
+
+    def __init__(self, max_qps: float = 15.0, burst_capacity: float | None = None):
+        """
+        初始化令牌桶速率限制器
+        :param max_qps: 令牌生成速率（每秒请求数）
+        :param burst_capacity: 桶容量（最大突发请求数），默认等于max_qps，即允许1秒内的全部突发
+        """
         self.max_qps = max_qps
-        # 前后请求最小间隔
-        self.min_interval = 1.0 / max_qps
-        self.last_request_time = 0
+        self.burst_capacity = burst_capacity if burst_capacity is not None else max_qps
+        # 初始桶是满的，支持启动阶段突发
+        self.current_tokens = float(self.burst_capacity)
+        # 用单调时间，避免系统时钟调整导致的限流失效
+        self.last_refill_time = time.monotonic()
         self.lock = threading.Lock()
-        logger.info(f"速率限制器初始化：QPS= {max_qps}, 最小请求间隔 = {self.min_interval:.3f}秒")
+        logger.info(
+            f"令牌桶速率限制器初始化：QPS={max_qps}, "
+            f"桶容量={self.burst_capacity}, "
+            f"单令牌生成间隔={1.0 / max_qps:.3f}秒"
+        )
 
-    def acquire(self):
+    def acquire(self) -> float:
         """
-        获取请求许可，如果频率超限则等待
-        :return: float: 实际等待的时间（秒）
+        阻塞式获取请求许可，若令牌不足则等待至有足够令牌
+        :return: float 实际等待时间（秒）
         """
-        with self.lock :
-            current_time = time.time()
-            time_since_last = current_time - self.last_request_time
+        wait_time = 0.0
+        with self.lock:
+            now = time.monotonic()
+            # 1. 惰性填充令牌：计算从上次填充到现在的新增令牌数
+            elapsed = now - self.last_refill_time
+            new_tokens = elapsed * self.max_qps
+            self.current_tokens = min(self.burst_capacity, self.current_tokens + new_tokens)
+            self.last_refill_time = now
 
-            if time_since_last < self.min_interval:
-                wait_time = self.min_interval - time_since_last
-                logger.debug(f"速率限制，需要等待{wait_time:.3f}秒")
-                self.last_request_time = time.time()
-
-                return wait_time
+            # 2. 检查是否有足够令牌
+            if self.current_tokens >= 1.0:
+                self.current_tokens -= 1.0
             else:
-                self.last_request_time = current_time
-                return 0
+                # 3. 计算需要等待的时间：补上缺口所需的时长
+                deficit = 1.0 - self.current_tokens
+                wait_time = deficit / self.max_qps
+                # 提前更新填充时间为未来时间，避免重复计算
+                self.last_refill_time = now + wait_time
+                self.current_tokens = 0.0  # 等待后刚好消耗1个令牌，剩余0
 
+        # 关键：锁外睡眠，避免长时间占用锁影响并发
+        if wait_time > 0:
+            logger.debug(f"速率限制，需要等待{wait_time:.3f}秒")
+            time.sleep(wait_time)
+        return wait_time
 
+    def try_acquire(self) -> bool:
+        """
+        非阻塞式获取请求许可，若令牌不足立即返回False
+        :return: bool 是否成功获取许可
+        """
+        with self.lock:
+            now = time.monotonic()
+            # 惰性填充令牌
+            elapsed = now - self.last_refill_time
+            new_tokens = elapsed * self.max_qps
+            self.current_tokens = min(self.burst_capacity, self.current_tokens + new_tokens)
+            self.last_refill_time = now
 
+            if self.current_tokens >= 1.0:
+                self.current_tokens -= 1.0
+                return True
+            return False
 
+    def get_remaining_tokens(self) -> float:
+        """返回当前剩余令牌数，仅用于监控调试"""
+        with self.lock:
+            return self.current_tokens
 
-    # get_web_search_rate_limiter()
+_web_search_rate_limiter = None
+def get_web_search_rate_limiter(max_qps: float = None) -> TokenBucketRateLimiter:
+    """
+    全局速率限制器实例（单例模式）
+    """
+    global _web_search_rate_limiter
+
+    if _web_search_rate_limiter is None:
+        if max_qps is None:
+            # 从环境变量读取，默认为12 QPS（留有余量）
+            max_qps = float(os.getenv("WEB_SEARCH_MAX_QPS", "12"))
+        _web_search_rate_limiter = TokenBucketRateLimiter(max_qps=max_qps)
+
+    return _web_search_rate_limiter
 
 
 class Agent :
@@ -113,7 +169,7 @@ class JsonAgent(Agent):
 
     def post_process(self, response):
         """self.keys参数转换为Pydantic模型类"""
-        result = json.loads(jsonUtils.extract_pattern(response, pattern="json"))
+        result = json.loads(JsonUtils.extract_pattern(response, pattern="json"))
         if not self.keys:
             return result
         # **result：字典解包，将result “炸开”成 key=value 的形式
@@ -153,21 +209,6 @@ class MCPAgent(Agent) :
             logger.error(f"MCP调用失败：{response}")
             return None
 
-_web_search_rate_limiter = None
-def get_web_search_rate_limiter(max_qps: float = None) -> RateLimiter:
-    """
-    全局速率限制器实例（单例模式）
-    """
-    global _web_search_rate_limiter
-
-    if _web_search_rate_limiter is None:
-        if max_qps is None:
-            # 从环境变量读取，默认为12 QPS（留有余量）
-            max_qps = float(os.getenv("WEB_SEARCH_MAX_QPS", "12"))
-        _web_search_rate_limiter = RateLimiter(max_qps=max_qps)
-
-    return _web_search_rate_limiter
-
 class WebSearchAgent(MCPAgent):
     """WebSearch MCP"""
     def step(self, prompt, **kwargs):
@@ -184,7 +225,7 @@ class WebSearchAgent(MCPAgent):
         for attempt in range(3):
             try:
                 # 在发送请求前进行速率限制检查
-                wait_time = 3 # rate_limiter.acquire()
+                wait_time = rate_limiter.acquire()
                 if wait_time > 0 :
                     logger.debug(f"速率限制等待：{wait_time:.3f}秒")
 
