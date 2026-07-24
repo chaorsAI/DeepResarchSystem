@@ -14,6 +14,7 @@
 from __future__ import annotations
 import json
 from dotenv import load_dotenv
+import asyncio
 
 from loguru import logger
 from IPython.display import Image, display
@@ -92,9 +93,12 @@ def _web_search(state: WebSearchState, config: RunnableConfig) -> OverallState:
     configurable = Configuration.runnable_config(config)
     web_searcher = WebSearchAgent()
 
-    # 执行搜索
-    response = web_searcher.step(prompt=state["search_query"],
-                                 count=10)
+    # 执行搜索                              count=10)
+    # asyncio.run() 会创建一个新的事件循环，运行协程，关闭循环。
+    response = asyncio.run(
+        web_searcher.astep(prompt=state["search_query"],
+                           count=10)
+    )
 
     # 检查搜索结果是否为空或None
     if not response or response is None:

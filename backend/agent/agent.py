@@ -16,6 +16,7 @@ import copy
 import traceback
 import time
 import threading
+import asyncio
 from dotenv import load_dotenv
 
 from loguru import logger
@@ -43,42 +44,49 @@ class TokenBucketRateLimiter:
         self.current_tokens = float(self.burst_capacity)
         # 用单调时间，避免系统时钟调整导致的限流失效
         self.last_refill_time = time.monotonic()
-        self.lock = threading.Lock()
+        self.lock = asyncio.Lock()
         logger.info(
             f"令牌桶速率限制器初始化：QPS={max_qps}, "
             f"桶容量={self.burst_capacity}, "
             f"单令牌生成间隔={1.0 / max_qps:.3f}秒"
         )
 
-    def acquire(self) -> float:
+    async def acquire(self) -> float:
         """
         阻塞式获取请求许可，若令牌不足则等待至有足够令牌
         :return: float 实际等待时间（秒）
         """
         wait_time = 0.0
-        with self.lock:
+        async with self.lock:
             now = time.monotonic()
             # 1. 惰性填充令牌：计算从上次填充到现在的新增令牌数
+            # 等待的时间
             elapsed = now - self.last_refill_time
+            # 等待时间新增的令牌数
             new_tokens = elapsed * self.max_qps
+            # 当前令牌数更新
             self.current_tokens = min(self.burst_capacity, self.current_tokens + new_tokens)
+            # 上次更新时间
             self.last_refill_time = now
 
             # 2. 检查是否有足够令牌
             if self.current_tokens >= 1.0:
+                # 令牌足够一次请求，放行当前请求，令牌数减1
                 self.current_tokens -= 1.0
             else:
-                # 3. 计算需要等待的时间：补上缺口所需的时长
+                # 3. 令牌不够一次请求。计算需要等待的时间：补上缺口所需的时长
+                # 还需要多少令牌才够一次请求
                 deficit = 1.0 - self.current_tokens
+                # 达到这些令牌数需要等待的时间
                 wait_time = deficit / self.max_qps
-                # 提前更新填充时间为未来时间，避免重复计算
+                # 提前更新填充时间为未来时间，避免重复计算；这个时间后至少可满足一次请求
                 self.last_refill_time = now + wait_time
                 self.current_tokens = 0.0  # 等待后刚好消耗1个令牌，剩余0
 
         # 关键：锁外睡眠，避免长时间占用锁影响并发
         if wait_time > 0:
             logger.debug(f"速率限制，需要等待{wait_time:.3f}秒")
-            time.sleep(wait_time)
+            await asyncio.sleep(wait_time)  # 使用 await
         return wait_time
 
     def try_acquire(self) -> bool:
@@ -211,7 +219,7 @@ class MCPAgent(Agent) :
 
 class WebSearchAgent(MCPAgent):
     """WebSearch MCP"""
-    def step(self, prompt, **kwargs):
+    async def astep(self, prompt, **kwargs):
         try:
             step_prompt = self.step_prompt.format(prompt=prompt)
         except Exception as e:
@@ -225,16 +233,19 @@ class WebSearchAgent(MCPAgent):
         for attempt in range(3):
             try:
                 # 在发送请求前进行速率限制检查
-                wait_time = rate_limiter.acquire()
+                wait_time = await rate_limiter.acquire()
                 if wait_time > 0 :
                     logger.debug(f"速率限制等待：{wait_time:.3f}秒")
 
-                response = Application.call(
+                # 获取到令牌后，再切换到线程池执行阻塞的 HTTP 请求
+                # 此时当前协程让出 CPU，但 rate_limiter 的锁已释放，其他协程可申请令牌
+                response = await asyncio.to_thread(
+                    Application.call,
                     api_key=api_key,
                     app_id=app_id,
                     prompt=step_prompt,
-                    biz_params=kwargs
-                )
+                    biz_params=kwargs,
+                    )
                 response = self.extract_pages_from_mcp_response(response, None)
                 return response
 
